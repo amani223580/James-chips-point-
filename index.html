@@ -1,0 +1,387 @@
+<!doctype html>
+<html lang="sw">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#f59e0b">
+<title>Biashara Rahisi</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{--bg:#fff8eb;--card:#fff;--ink:#1f2937;--mut:#6b7280;--pri:#f59e0b;--pri-d:#b45309;--ok:#16a34a;--err:#dc2626;--line:#eee3cf}
+*{box-sizing:border-box}
+body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;margin:0;background:var(--bg);color:var(--ink)}
+.wrap{max-width:780px;margin:auto;padding:16px}
+.card{background:var(--card);border-radius:16px;padding:16px;margin:12px 0;box-shadow:0 4px 18px #0000000a}
+h1,h2,h3{margin:0 0 8px}h1{font-size:1.5rem}h2{font-size:1.15rem}h3{font-size:1rem}
+.mut{color:var(--mut);font-size:.9rem}
+input,textarea,select,button{font:inherit;width:100%;padding:11px;border:1px solid #d9cdb4;border-radius:10px;background:#fff}
+button{background:var(--ink);color:#fff;border:0;font-weight:700;cursor:pointer;margin-top:8px}
+button.pri{background:var(--pri);color:#1f2937}
+button.ghost{background:#fff;color:var(--ink);border:1px solid #d9cdb4}
+button.danger{background:var(--err)}
+button.ok2{background:var(--ok)}
+button.sm{width:auto;padding:7px 12px;font-size:.85rem;margin:4px 6px 0 0}
+button:disabled{opacity:.5}
+label{display:block;font-weight:600;margin:10px 0 5px;font-size:.9rem}
+label.chk{display:flex;gap:8px;align-items:center;font-weight:500}
+label.chk input{width:auto}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+@media(max-width:600px){.grid{grid-template-columns:1fr}}
+.row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--line)}
+.row:last-child{border:0}
+.qty{display:flex;align-items:center;gap:8px}
+.qty button{width:34px;height:34px;padding:0;margin:0;border-radius:50%}
+.qty b{min-width:20px;text-align:center}
+.msg{padding:12px;border-radius:10px;margin-top:10px}
+.ok{background:#ecfdf3;color:#166534}.err{background:#fef2f2;color:#991b1b}.warn{background:#fffbeb;color:#92400e}
+.tabs{display:flex;gap:6px;overflow-x:auto;margin:10px 0}
+.tabs button{width:auto;margin:0;background:#fff;color:var(--ink);border:1px solid #d9cdb4;white-space:nowrap}
+.tabs button.on{background:var(--pri);border-color:var(--pri)}
+.badge{display:inline-block;padding:3px 9px;border-radius:99px;font-size:.78rem;font-weight:700;background:#fde68a;color:#78350f}
+.badge.paid,.badge.delivered{background:#bbf7d0;color:#14532d}.badge.cancelled{background:#fecaca;color:#7f1d1d}.badge.pending{background:#bfdbfe;color:#1e3a8a}
+.stats{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.stat{background:#fffbeb;border:1px solid var(--line);border-radius:12px;padding:12px}
+.stat b{display:block;font-size:1.1rem;margin-top:4px}
+.pay{background:#eff6ff;border:1px solid #bfdbfe;border-radius:12px;padding:10px;margin:8px 0;font-size:.92rem}
+.pm-card{background:#fffbeb;border:1px solid var(--line);border-radius:12px;padding:10px;margin:8px 0}
+a{color:var(--pri-d)}
+.top{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.top button{width:auto;margin:0}
+</style>
+</head>
+<body>
+<main class="wrap" id="app">Inapakia...</main>
+<script>
+const SB_URL='https://xinxsfxbefsgmzwnhxtb.supabase.co';
+const SB_KEY='sb_publishable_IOonvgq8_6zCN6fLgxaLIg_CPdD-FYl';
+const sb=supabase.createClient(SB_URL,SB_KEY);
+const app=document.getElementById('app');
+const G=id=>document.getElementById(id);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const money=n=>'TZS '+Number(n||0).toLocaleString('en-US');
+const pad=n=>String(n).padStart(2,'0');
+const ymd=d=>`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+const fmtTime=s=>new Date(s).toLocaleString('sw-TZ',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});
+const ST={new:'Mpya',confirmed:'Imethibitishwa',preparing:'Inaandaliwa',ready:'Tayari',out_for_delivery:'Njiani',delivered:'Imefikishwa',cancelled:'Imefutwa'};
+const PS={unpaid:'Haijalipwa',pending:'Inasubiri uthibitisho',paid:'Imelipwa',refunded:'Imerudishwa'};
+const isCash=n=>/cash|taslimu/i.test(n||'');
+
+/* ================= CUSTOMER SHOP ================= */
+async function shop(){
+  const slug=new URLSearchParams(location.search).get('b')||'james-chips-point';
+  let {data:b}=await sb.from('businesses').select('id,name,phone,location').eq('public_slug',slug).maybeSingle();
+  if(!b){const {data:all}=await sb.from('businesses').select('id,name,phone,location').eq('is_active',true).limit(2);if(all&&all.length===1)b=all[0]}
+  if(!b){app.innerHTML='<div class="card">Biashara haipatikani.</div>';return}
+  document.title=b.name;
+  const [pr,pm]=await Promise.all([
+    sb.from('business_products').select('id,name,category,price,description,is_customizable,is_custom_amount,min_amount').eq('business_id',b.id).eq('is_available',true).order('category').order('name'),
+    sb.from('business_payment_methods').select('method_name,account_name,account_number,instructions').eq('business_id',b.id).eq('is_active',true).order('created_at')
+  ]);
+  const prods=pr.data||[], pays=pm.data||[], cart={}, camt={};
+  const payInfo=()=>pays.length?pays.map(m=>`<div class="pm-card"><b>${esc(m.method_name)}</b>
+     ${m.account_number?`<div style="font-size:1.15rem;margin-top:4px"><b>${esc(m.account_number)}</b> <button type="button" class="sm ghost" data-copy="${esc(m.account_number)}">Nakili</button></div>`:''}
+     ${m.account_name?`<div>Jina: <b>${esc(m.account_name)}</b></div>`:''}${m.instructions?`<div class="mut">${esc(m.instructions)}</div>`:''}</div>`).join(''):'';
+  app.innerHTML=`
+  <div class="card"><h1>${esc(b.name)} 🍟</h1><div class="mut">Chagua unachotaka, tuma oda, tutakupigia kuthibitisha.${b.location?'<br>📍 '+esc(b.location):''}${b.phone?'<br>📞 '+esc(b.phone):''}</div></div>
+  <div class="card"><h2>Menu</h2><div id="menu">${prods.map(p=>p.is_custom_amount?`
+    <div class="row"><div style="flex:1"><b>${esc(p.name)}</b><div class="mut">${esc(p.description||'Andika kiasi unachotaka')}</div>
+      <input class="cr" data-id="${p.id}" placeholder="Maelezo (mf. bila pilipili)" maxlength="200" style="display:none;margin-top:6px"></div>
+      <div style="width:130px"><input class="amt" data-id="${p.id}" type="number" inputmode="numeric" min="${p.min_amount}" step="100" placeholder="TZS"><div class="mut" style="font-size:.78rem">Kuanzia ${money(p.min_amount)}</div></div></div>`:`
+    <div class="row"><div><b>${esc(p.name)}</b><div class="mut">${esc(p.description||p.category||'')}</div>
+      ${p.is_customizable?`<input class="cr" data-id="${p.id}" placeholder="Maelezo (mf. bila pilipili)" maxlength="200" style="display:none;margin-top:6px">`:''}</div>
+      <div style="text-align:right"><b>${money(p.price)}</b>
+      <div class="qty" style="justify-content:flex-end;margin-top:6px"><button type="button" class="ghost" data-q="-1" data-id="${p.id}">−</button><b id="q-${p.id}">0</b><button type="button" class="pri" data-q="1" data-id="${p.id}">+</button></div></div></div>`).join('')||'<div class="mut">Menu haijawekwa.</div>'}</div>
+    <div class="row"><b>Jumla</b><b id="total">${money(0)}</b></div></div>
+  <div class="card"><h2>Tuma Oda</h2>
+    <form id="f"><div class="grid"><div><label>Jina</label><input id="name" required maxlength="100"></div><div><label>Simu</label><input id="phone" type="tel" required maxlength="30"></div></div>
+    <label>Mahali pa delivery</label><input id="loc" required maxlength="200">
+    <label>Maelezo ya eneo (hiari)</label><input id="desc" maxlength="300" placeholder="Karibu na...">
+    <label>Muda unaotaka (hiari)</label><input id="when" type="datetime-local">
+    <label>Maelezo mengine (hiari)</label><textarea id="notes" rows="2" maxlength="500"></textarea>
+    <button class="pri" id="send">📦 Tuma Oda</button></form><div id="msg"></div></div>
+  <div id="paybox"></div>
+  <div class="card"><h2>Fuatilia oda yako</h2><div class="grid"><div><label>Namba ya oda</label><input id="tc" maxlength="8" placeholder="mf. 3F9A21BC"></div><div><label>Simu uliyotumia</label><input id="tp" type="tel"></div></div>
+    <button class="ghost" id="tb">Angalia hali</button><div id="tr"></div></div>`;
+  const upd=()=>{
+    let t=0;
+    prods.forEach(p=>{
+      let on=false;
+      if(p.is_custom_amount){const a=Number(camt[p.id]||0);if(a>0){t+=a;on=true}}
+      else{const q=cart[p.id]||0;t+=q*Number(p.price);G('q-'+p.id).textContent=q;on=q>0}
+      const cr=document.querySelector(`.cr[data-id="${p.id}"]`);if(cr)cr.style.display=on?'block':'none'});
+    G('total').textContent=money(t)};
+  G('menu').onclick=e=>{const btn=e.target.closest('button[data-q]');if(!btn)return;
+    const id=btn.dataset.id;cart[id]=Math.max(0,Math.min(50,(cart[id]||0)+Number(btn.dataset.q)));upd()};
+  G('menu').oninput=e=>{if(e.target.classList.contains('amt')){camt[e.target.dataset.id]=Number(e.target.value)||0;upd()}};
+  G('f').onsubmit=async e=>{
+    e.preventDefault();const msg=G('msg'),btn=G('send');
+    const items=[];
+    for(const p of prods){
+      const note=document.querySelector(`.cr[data-id="${p.id}"]`)?.value||null;
+      if(p.is_custom_amount){const a=Number(camt[p.id]||0);if(a>0){
+        if(a<Number(p.min_amount)){msg.innerHTML=`<div class="msg err">Kiasi cha ${esc(p.name)} kiwe angalau ${money(p.min_amount)}.</div>`;return}
+        items.push({product_id:p.id,amount:a,custom_request:note})}}
+      else if((cart[p.id]||0)>0)items.push({product_id:p.id,quantity:cart[p.id],custom_request:note});
+    }
+    if(!items.length){msg.innerHTML='<div class="msg err">Chagua angalau bidhaa moja.</div>';return}
+    btn.disabled=true;msg.innerHTML='<div class="msg">Inatuma...</div>';
+    const w=G('when').value, myPhone=G('phone').value;
+    const {data,error}=await sb.rpc('place_order',{p_business_id:b.id,p_name:G('name').value,p_phone:myPhone,p_location:G('loc').value,p_location_desc:G('desc').value,
+      p_requested_at:w?new Date(w).toISOString():null,p_notes:G('notes').value,p_items:items});
+    btn.disabled=false;
+    if(error){msg.innerHTML=`<div class="msg err">Oda haijatumwa: ${esc(error.message)}</div>`;return}
+    const total=prods.reduce((s,p)=>s+(p.is_custom_amount?Number(camt[p.id]||0):(cart[p.id]||0)*Number(p.price)),0);
+    msg.innerHTML=`<div class="msg ok">✅ Oda imetumwa. Namba ya oda: <b>${esc(data)}</b>. Tutakupigia kuthibitisha. Hifadhi namba hii.</div>`;
+    G('tc').value=data;G('tp').value=myPhone;
+    showPay(data,myPhone,total);
+    Object.keys(cart).forEach(k=>delete cart[k]);Object.keys(camt).forEach(k=>delete camt[k]);
+    document.querySelectorAll('.amt').forEach(i=>i.value='');upd();e.target.reset();
+  };
+  function showPay(code,phone,total){
+    const online=pays.filter(m=>!isCash(m.method_name));
+    G('paybox').innerHTML=`<div class="card"><h2>Malipo</h2><div>Jumla ya kulipa: <b>${money(total)}</b></div>
+      <div class="mut" style="margin:6px 0">Unaweza kulipa <b>cash</b> kwa anayeleta oda (hakuna haja ya kujaza chochote hapa)${online.length?', au ulipe moja kwa moja kwa njia hizi:':'.'}</div>
+      ${payInfo()}
+      ${online.length?`<h3 style="margin-top:12px">Umeshalipa? Tuma uthibitisho</h3>
+      <label>Njia uliyotumia</label><select id="pmeth">${online.map(m=>`<option>${esc(m.method_name)}</option>`).join('')}</select>
+      <label>Jina la mlipaji</label><input id="ppayer" maxlength="100">
+      <label>Namba ya muamala / bandika ujumbe wa muamala</label><textarea id="pref" rows="3" maxlength="500" placeholder="mf. Muamala ABC123XYZ Tsh 3,000 umetumwa kwa..."></textarea>
+      <button class="pri" id="psend">Nimelipa</button><div id="pmsg"></div>`:''}</div>`;
+    const ps=G('psend');
+    if(ps)ps.onclick=async()=>{
+      ps.disabled=true;
+      const {error}=await sb.rpc('submit_payment',{p_code:code,p_phone:phone,p_method:G('pmeth').value,p_payer:G('ppayer').value,p_reference:G('pref').value});
+      ps.disabled=false;
+      G('pmsg').innerHTML=error?`<div class="msg err">${esc(error.message)}</div>`:'<div class="msg ok">✅ Uthibitisho umetumwa. Mmiliki ataukagua na kuthibitisha.</div>';
+    };
+    G('paybox').scrollIntoView({behavior:'smooth'});
+  }
+  G('tb').onclick=async()=>{
+    const tr=G('tr');tr.innerHTML='<div class="msg">Inatafuta...</div>';
+    const {data,error}=await sb.rpc('track_order',{p_code:G('tc').value,p_phone:G('tp').value});
+    if(error||!data){tr.innerHTML='<div class="msg err">Oda haijapatikana. Angalia namba ya oda na simu.</div>';return}
+    tr.innerHTML=`<div class="msg ok"><b>Hali ya oda:</b> ${esc(ST[data.status]||data.status)}<br><b>Malipo:</b> ${esc(PS[data.payment_status]||data.payment_status)}<br>
+      ${(data.items||[]).map(i=>`${esc(i.qty)} × ${esc(i.name)} — ${money(i.total)}`).join('<br>')}<br><b>Jumla: ${money(data.total)}</b></div>`;
+  };
+}
+
+/* ================= OWNER DASHBOARD ================= */
+const NEXT={new:'confirmed',confirmed:'preparing',preparing:'ready',ready:'out_for_delivery',out_for_delivery:'delivered'};
+const NEXTL={new:'Thibitisha',confirmed:'Anza kuandaa',preparing:'Tayari',ready:'Peleka',out_for_delivery:'Imefikishwa'};
+let me=null,bizId=null,bizName='',tab='orders',filter='active',range=1,timer=null,lastNew=null,lastOrders=[];
+
+async function admin(){
+  const {data:{session}}=await sb.auth.getSession();
+  if(!session){return loginView()}
+  me=session.user;
+  const {data:mem}=await sb.from('business_members').select('business_id,role').eq('user_id',me.id).limit(1);
+  if(!mem||!mem.length){
+    app.innerHTML=`<div class="card"><h2>Akaunti haijaunganishwa</h2><p>Mpe msimamizi email hii aiunganishe na biashara: <b>${esc(me.email)}</b></p><button id="out" class="ghost">Toka</button></div>`;
+    G('out').onclick=async()=>{await sb.auth.signOut();admin()};return}
+  bizId=mem[0].business_id;
+  const {data:b}=await sb.from('businesses').select('name').eq('id',bizId).maybeSingle();bizName=b?.name||'';
+  shell();
+}
+function loginView(){
+  app.innerHTML=`<div class="card"><h1>Dashibodi 🔐</h1><div class="mut">Ingia kusimamia biashara yako.</div>
+  <form id="lf"><label>Email</label><input id="em" type="email" required><label>Nenosiri</label><input id="pw" type="password" minlength="6" required>
+  <button class="pri" id="in">Ingia</button><button type="button" class="ghost" id="su">Jisajili (akaunti mpya)</button></form><div id="lm"></div></div>`;
+  const lm=G('lm');
+  G('lf').onsubmit=async e=>{e.preventDefault();
+    const {error}=await sb.auth.signInWithPassword({email:G('em').value,password:G('pw').value});
+    if(error){lm.innerHTML=`<div class="msg err">${esc(error.message)}</div>`;return}admin()};
+  G('su').onclick=async()=>{
+    if(!G('em').value||G('pw').value.length<6){lm.innerHTML='<div class="msg err">Weka email na nenosiri (angalau herufi 6).</div>';return}
+    const {data,error}=await sb.auth.signUp({email:G('em').value,password:G('pw').value});
+    if(error){lm.innerHTML=`<div class="msg err">${esc(error.message)}</div>`;return}
+    if(data.session){admin()}else lm.innerHTML='<div class="msg ok">Akaunti imeundwa. Angalia email yako kuthibitisha, kisha ingia.</div>'};
+}
+function shell(){
+  app.innerHTML=`<div class="card top"><div><h2>${esc(bizName)}</h2><div class="mut">${esc(me.email)}</div></div><button id="out" class="ghost">Toka</button></div>
+  <div class="tabs" id="tabs">${[['orders','Oda'],['summary','Muhtasari'],['costs','Gharama'],['products','Bidhaa'],['settings','Mipangilio']].map(([k,l])=>`<button data-t="${k}" class="${tab===k?'on':''}">${l}</button>`).join('')}</div><div id="view"></div>`;
+  G('out').onclick=async()=>{await sb.auth.signOut();clearInterval(timer);lastNew=null;admin()};
+  G('tabs').onclick=e=>{const t=e.target.dataset.t;if(!t)return;tab=t;shell()};
+  clearInterval(timer);
+  ({orders:ordersView,summary:summaryView,costs:costsView,products:productsView,settings:settingsView})[tab]();
+  badges();
+  timer=setInterval(()=>{if(G('olist'))loadOrders();else badges()},20000);
+}
+const V=()=>G('view');
+function beep(){try{const c=new (window.AudioContext||window.webkitAudioContext)(),o=c.createOscillator(),g=c.createGain();o.connect(g);g.connect(c.destination);o.frequency.value=880;g.gain.value=.15;o.start();o.stop(c.currentTime+.4)}catch(e){}}
+async function badges(){
+  const [a,b]=await Promise.all([
+    sb.from('orders').select('id',{count:'exact',head:true}).eq('business_id',bizId).eq('order_status','new'),
+    sb.from('orders').select('id',{count:'exact',head:true}).eq('business_id',bizId).eq('payment_status','pending').neq('order_status','cancelled')]);
+  const n=a.count||0,p=b.count||0,t=document.querySelector('[data-t="orders"]');
+  if(t)t.textContent='Oda'+((n||p)?` (${n?n+' mpya':''}${n&&p?' · ':''}${p?p+' 💳':''})`:'');
+  if(lastNew!==null&&n>lastNew)beep();
+  lastNew=n;document.title=(n?`(${n}) `:'')+bizName;
+}
+
+/* ---- Orders ---- */
+function ordersView(){
+  V().innerHTML=`<div class="tabs" id="flt">${[['active','Zinazoendelea'],['new','Mpya'],['pay','Malipo yanasubiri'],['delivered','Zilizokamilika'],['cancelled','Zilizofutwa'],['all','Zote']].map(([k,l])=>`<button data-f="${k}" class="${filter===k?'on':''}">${l}</button>`).join('')}</div><div id="olist">Inapakia...</div>`;
+  G('flt').onclick=e=>{const f=e.target.dataset.f;if(!f)return;filter=f;ordersView()};
+  loadOrders();
+}
+async function loadOrders(){
+  let q=sb.from('orders').select('*,order_items(*)').eq('business_id',bizId).order('created_at',{ascending:false}).limit(100);
+  if(filter==='active')q=q.in('order_status',['new','confirmed','preparing','ready','out_for_delivery']);
+  else if(filter==='pay')q=q.eq('payment_status','pending').neq('order_status','cancelled');
+  else if(filter!=='all')q=q.eq('order_status',filter);
+  const {data,error}=await q;const el=G('olist');if(!el)return;
+  if(error){el.innerHTML=`<div class="msg err">${esc(error.message)}</div>`;return}
+  lastOrders=data||[];badges();
+  const seen=ref=>ref?lastOrders.filter(x=>x.payment_reference&&x.payment_reference.trim().toLowerCase()===ref.trim().toLowerCase()).length>1:false;
+  el.innerHTML=lastOrders.map(o=>`<div class="card">
+    <div class="top"><b>#${esc(o.id.slice(0,8).toUpperCase())}</b><span><span class="badge ${esc(o.order_status)}">${esc(ST[o.order_status]||o.order_status)}</span> <span class="badge ${esc(o.payment_status)}">${esc(PS[o.payment_status]||o.payment_status)}</span></span></div>
+    <div class="mut">${fmtTime(o.created_at)}</div>
+    <p style="margin:8px 0"><b>${esc(o.customer_name)}</b> · <a href="tel:${esc(o.customer_phone)}">${esc(o.customer_phone)}</a><br>📍 ${esc(o.location||'-')}${o.location_description?' — '+esc(o.location_description):''}</p>
+    ${(o.order_items||[]).map(i=>`<div class="row"><span>${esc(i.quantity)} × ${esc(i.item_name)}${i.custom_request?`<br><small class="mut">${esc(i.custom_request)}</small>`:''}</span><span>${money(i.line_total)}</span></div>`).join('')}
+    ${o.notes?`<div class="mut">📝 ${esc(o.notes)}</div>`:''}
+    <div class="row"><b>Jumla</b><b>${money(o.total)}</b></div>
+    ${o.payment_reference?`<div class="pay"><b>💳 Malipo yaliyotumwa</b> ${o.payment_submitted_at?'<small class="mut">('+fmtTime(o.payment_submitted_at)+')</small>':''}<br>Njia: ${esc(o.payment_method||'-')} · Mlipaji: <b>${esc(o.payer_name||'-')}</b><div style="white-space:pre-wrap;margin-top:4px">${esc(o.payment_reference)}</div>
+      ${seen(o.payment_reference)?'<div class="msg warn">⚠️ Namba/ujumbe huu umetumika kwenye oda nyingine. Kagua kabla ya kuthibitisha.</div>':''}
+      <div class="mut" style="margin-top:4px">Angalia simu yako kama pesa ${money(o.total)} imeingia kweli.</div></div>`:''}
+    <div>${NEXT[o.order_status]?`<button class="sm pri" data-a="adv" data-id="${o.id}" data-to="${NEXT[o.order_status]}">${NEXTL[o.order_status]}</button>`:''}
+    ${o.payment_status==='pending'?`<button class="sm ok2" data-a="paid" data-id="${o.id}">✅ Thibitisha malipo</button><button class="sm danger" data-a="rejectpay" data-id="${o.id}">❌ Kataa</button>`:''}
+    ${o.payment_status==='unpaid'&&o.order_status!=='cancelled'?`<button class="sm" data-a="paidcash" data-id="${o.id}">Imelipwa (cash)</button>`:''}
+    ${['new','confirmed','preparing'].includes(o.order_status)?`<button class="sm danger" data-a="cancel" data-id="${o.id}">Futa oda</button>`:''}</div></div>`).join('')||'<div class="card mut">Hakuna oda hapa.</div>';
+}
+
+/* ---- Summary ---- */
+function summaryView(){
+  V().innerHTML=`<div class="tabs" id="rg">${[[1,'Leo'],[7,'Siku 7'],[30,'Siku 30']].map(([k,l])=>`<button data-r="${k}" class="${range===k?'on':''}">${l}</button>`).join('')}</div><div id="sum">Inapakia...</div>`;
+  G('rg').onclick=e=>{const r=e.target.dataset.r;if(!r)return;range=Number(r);summaryView()};
+  loadSummary();
+}
+async function loadSummary(){
+  const d=new Date();d.setHours(0,0,0,0);d.setDate(d.getDate()-(range-1));const iso=d.toISOString(),ds=ymd(d);
+  const [o,e,p]=await Promise.all([
+    sb.from('orders').select('total,order_status,payment_status,payment_method,order_items(item_name,quantity,line_total)').eq('business_id',bizId).gte('created_at',iso).limit(5000),
+    sb.from('expenses').select('amount').eq('business_id',bizId).gte('expense_date',ds).limit(5000),
+    sb.from('purchases').select('amount').eq('business_id',bizId).gte('purchase_date',ds).limit(5000)]);
+  const all=o.data||[],valid=all.filter(x=>x.order_status!=='cancelled');
+  const tot=a=>a.reduce((s,x)=>s+Number(x.total??x.amount??0),0);
+  const sales=tot(valid),paidO=valid.filter(x=>x.payment_status==='paid'),paid=tot(paidO),
+        pend=tot(valid.filter(x=>x.payment_status==='pending')),unpaid=tot(valid.filter(x=>x.payment_status==='unpaid')),
+        exp=tot(e.data||[]),pur=tot(p.data||[]),cost=exp+pur;
+  const byProd={};valid.forEach(x=>(x.order_items||[]).forEach(i=>{const k=i.item_name;byProd[k]=byProd[k]||{q:0,t:0};byProd[k].q+=Number(i.quantity);byProd[k].t+=Number(i.line_total)}));
+  const byMeth={};paidO.forEach(x=>{const k=x.payment_method||'Cash';byMeth[k]=(byMeth[k]||0)+Number(x.total)});
+  const el=G('sum');if(!el)return;
+  const col=v=>v>=0?'var(--ok)':'var(--err)';
+  el.innerHTML=`<div class="stats">
+   <div class="stat">Oda (zisizofutwa)<b>${valid.length}</b></div><div class="stat">Zilizofutwa<b>${all.length-valid.length}</b></div>
+   <div class="stat">Mauzo yote<b>${money(sales)}</b></div><div class="stat">Yaliyolipwa<b>${money(paid)}</b></div>
+   <div class="stat">Yanasubiri uthibitisho<b>${money(pend)}</b></div><div class="stat">Hayajalipwa<b>${money(unpaid)}</b></div>
+   <div class="stat">Gharama<b>${money(exp)}</b></div><div class="stat">Manunuzi (stock)<b>${money(pur)}</b></div>
+   <div class="stat" style="grid-column:1/-1">Faida halisi (yaliyolipwa − gharama − manunuzi)<b style="color:${col(paid-cost)}">${money(paid-cost)}</b></div>
+   <div class="stat" style="grid-column:1/-1">Faida inayotarajiwa (mauzo yote − gharama − manunuzi)<b style="color:${col(sales-cost)}">${money(sales-cost)}</b></div></div>
+   <div class="card"><h3>Mauzo kwa bidhaa</h3>${Object.entries(byProd).sort((a,b)=>b[1].t-a[1].t).map(([k,v])=>`<div class="row"><span>${esc(k)} <small class="mut">× ${v.q}</small></span><b>${money(v.t)}</b></div>`).join('')||'<div class="mut">Hakuna mauzo.</div>'}</div>
+   <div class="card"><h3>Yaliyolipwa kwa njia ya malipo</h3>${Object.entries(byMeth).map(([k,v])=>`<div class="row"><span>${esc(k)}</span><b>${money(v)}</b></div>`).join('')||'<div class="mut">Hakuna malipo yaliyothibitishwa.</div>'}</div>`;
+}
+
+/* ---- Expenses & purchases ---- */
+function costsView(){
+  const today=ymd(new Date());
+  V().innerHTML=`<div class="card"><h3>Ongeza gharama</h3><form id="ef"><label>Maelezo</label><input id="ed" required>
+    <div class="grid"><div><label>Kiasi (TZS)</label><input id="ea" type="number" min="0" step="any" required></div><div><label>Aina</label><input id="ec" placeholder="mf. umeme, mafuta"></div></div>
+    <label>Tarehe</label><input id="edt" type="date" value="${today}"><button class="pri">Hifadhi gharama</button></form></div>
+  <div class="card"><h3>Ongeza manunuzi (stock)</h3><form id="pf"><label>Bidhaa</label><input id="pn" required placeholder="mf. Viazi, Kuku">
+    <div class="grid"><div><label>Kiasi / idadi</label><input id="pq" type="number" min="0" step="any"></div><div><label>Gharama (TZS)</label><input id="pa" type="number" min="0" step="any" required></div></div>
+    <label>Tarehe</label><input id="pdt" type="date" value="${today}"><button class="pri">Hifadhi manunuzi</button></form></div>
+  <div id="clist">Inapakia...</div>`;
+  G('ef').onsubmit=async e=>{e.preventDefault();
+    const {error}=await sb.from('expenses').insert({business_id:bizId,description:G('ed').value,amount:Number(G('ea').value),category:G('ec').value||null,expense_date:G('edt').value||today});
+    if(error)return alert(error.message);e.target.reset();G('edt').value=today;loadCosts()};
+  G('pf').onsubmit=async e=>{e.preventDefault();
+    const {error}=await sb.from('purchases').insert({business_id:bizId,item_name:G('pn').value,quantity:G('pq').value?Number(G('pq').value):null,amount:Number(G('pa').value),purchase_date:G('pdt').value||today});
+    if(error)return alert(error.message);e.target.reset();G('pdt').value=today;loadCosts()};
+  loadCosts();
+}
+async function loadCosts(){
+  const [e,p]=await Promise.all([
+    sb.from('expenses').select('*').eq('business_id',bizId).order('expense_date',{ascending:false}).order('created_at',{ascending:false}).limit(20),
+    sb.from('purchases').select('*').eq('business_id',bizId).order('purchase_date',{ascending:false}).order('created_at',{ascending:false}).limit(20)]);
+  const el=G('clist');if(!el)return;
+  el.innerHTML=`<div class="card"><h3>Gharama za karibuni</h3>${(e.data||[]).map(x=>`<div class="row"><span>${esc(x.description)}<br><small class="mut">${esc(x.expense_date)}${x.category?' · '+esc(x.category):''}</small></span><span>${money(x.amount)} <button class="sm danger" data-a="delexp" data-id="${x.id}">✕</button></span></div>`).join('')||'<div class="mut">Hakuna.</div>'}</div>
+  <div class="card"><h3>Manunuzi ya karibuni</h3>${(p.data||[]).map(x=>`<div class="row"><span>${esc(x.item_name)}${x.quantity!=null?' ('+esc(x.quantity)+')':''}<br><small class="mut">${esc(x.purchase_date)}</small></span><span>${money(x.amount)} <button class="sm danger" data-a="delpur" data-id="${x.id}">✕</button></span></div>`).join('')||'<div class="mut">Hakuna.</div>'}</div>`;
+}
+
+/* ---- Products ---- */
+function productsView(){
+  V().innerHTML=`<div class="card"><h3>Ongeza bidhaa</h3><form id="nf"><div class="grid"><div><label>Jina</label><input id="nn" required></div><div><label>Aina</label><input id="nc" placeholder="mf. Chips, Vinywaji"></div></div>
+    <div class="grid"><div><label>Bei (TZS)</label><input id="np" type="number" min="0" step="any"></div><div><label>Maelezo</label><input id="nd"></div></div>
+    <label class="chk"><input id="ncu" type="checkbox"> Mteja anaweza kuandika maelezo (mf. bila pilipili)</label>
+    <label class="chk"><input id="nca" type="checkbox"> Mteja achague kiasi mwenyewe (mf. chips za 1,000)</label>
+    <div id="nmw" style="display:none"><label>Kiasi cha chini (TZS)</label><input id="nm" type="number" min="0" value="500"></div>
+    <button class="pri">Ongeza</button></form></div><div id="plist">Inapakia...</div>`;
+  G('nca').onchange=()=>{G('nmw').style.display=G('nca').checked?'block':'none'};
+  G('nf').onsubmit=async e=>{e.preventDefault();
+    const ca=G('nca').checked;if(!ca&&G('np').value==='')return alert('Weka bei.');
+    const {error}=await sb.from('business_products').insert({business_id:bizId,name:G('nn').value,category:G('nc').value||null,price:ca?0:Number(G('np').value),description:G('nd').value||null,is_customizable:G('ncu').checked,is_custom_amount:ca,min_amount:ca?Number(G('nm').value||0):500});
+    if(error)return alert(error.message);e.target.reset();G('nmw').style.display='none';loadProducts()};
+  loadProducts();
+}
+async function loadProducts(){
+  const {data}=await sb.from('business_products').select('*').eq('business_id',bizId).order('category').order('name');
+  const el=G('plist');if(!el)return;
+  el.innerHTML=`<div class="card">${(data||[]).map(p=>`<div class="row"><span><b>${esc(p.name)}</b><br><small class="mut">${esc(p.category||'')} · ${p.is_custom_amount?'Kiasi chochote (kuanzia '+money(p.min_amount)+')':money(p.price)}</small></span>
+    <span style="text-align:right"><button class="sm ghost" data-a="price" data-id="${p.id}" data-c="${p.is_custom_amount?1:0}" data-p="${p.is_custom_amount?p.min_amount:p.price}">${p.is_custom_amount?'Kiwango':'Bei'}</button><button class="sm ${p.is_available?'':'danger'}" data-a="avail" data-id="${p.id}" data-v="${p.is_available}">${p.is_available?'Ipo':'Haipo'}</button><button class="sm danger" data-a="delprod" data-id="${p.id}" data-n="${esc(p.name)}">🗑</button></span></div>`).join('')||'<div class="mut">Hakuna bidhaa.</div>'}</div>`;
+}
+
+/* ---- Settings: business info + payment methods ---- */
+function settingsView(){V().innerHTML='<div id="bi">Inapakia...</div><div id="pml"></div>';loadSettings()}
+async function loadSettings(){
+  const [b,m]=await Promise.all([
+    sb.from('businesses').select('name,phone,location,location_description').eq('id',bizId).maybeSingle(),
+    sb.from('business_payment_methods').select('*').eq('business_id',bizId).order('created_at')]);
+  if(!G('bi'))return;const x=b.data||{};
+  G('bi').innerHTML=`<div class="card"><h3>Taarifa za biashara</h3><div class="mut">Zinaonekana kwa wateja.</div>
+    <label>Jina la biashara</label><input id="bn" value="${esc(x.name)}"><label>Simu</label><input id="bp" value="${esc(x.phone)}" type="tel">
+    <label>Mahali</label><input id="bl" value="${esc(x.location)}"><label>Maelezo ya mahali</label><input id="bd" value="${esc(x.location_description)}">
+    <button class="pri" data-a="bizsave">Hifadhi taarifa</button></div>`;
+  const pmForm=(p)=>`<div class="pm-card pm" data-id="${p?p.id:''}">
+    <label>Njia ya malipo (mf. M-Pesa Lipa Namba, Tigo Pesa, CRDB Bank)</label><input class="m1" value="${esc(p?.method_name)}">
+    <label>Namba (Lipa namba / namba ya simu / akaunti ya benki)</label><input class="m3" value="${esc(p?.account_number)}">
+    <label>Jina linaloonekana kwa mteja</label><input class="m2" value="${esc(p?.account_name)}">
+    <label>Maelezo (hiari)</label><input class="m4" value="${esc(p?.instructions)}" placeholder="mf. Weka namba ya oda kwenye kumbukumbu">
+    <label class="chk"><input type="checkbox" class="m5" ${(!p||p.is_active)?'checked':''}> Ionekane kwa wateja</label>
+    ${p?`<button class="sm pri" data-a="pmsave">Hifadhi</button><button class="sm danger" data-a="pmdel">Futa</button>`:`<button class="pri" data-a="pmadd">Ongeza njia ya malipo</button>`}</div>`;
+  G('pml').innerHTML=`<div class="card"><h3>Njia za malipo</h3><div class="mut">Wateja wataona hizi wakitaka kulipa moja kwa moja. Cash (kulipa anayeleta oda) tengeneza kwa jina "Cash".</div>
+    ${(m.data||[]).map(pmForm).join('')}<h3 style="margin-top:14px">Ongeza mpya</h3>${pmForm(null)}</div>`;
+}
+
+/* ---- Actions ---- */
+document.addEventListener('click',async e=>{
+  const cp=e.target.closest('[data-copy]');
+  if(cp){try{await navigator.clipboard.writeText(cp.dataset.copy);cp.textContent='Imenakiliwa ✓'}catch(_){prompt('Nakili namba:',cp.dataset.copy)}return}
+  const b=e.target.closest('[data-a]');if(!b)return;const {a,id}=b.dataset;let r;
+  if(a==='adv')r=await sb.from('orders').update({order_status:b.dataset.to}).eq('id',id);
+  else if(a==='paid')r=await sb.from('orders').update({payment_status:'paid'}).eq('id',id);
+  else if(a==='paidcash')r=await sb.from('orders').update({payment_status:'paid',payment_method:'Cash'}).eq('id',id);
+  else if(a==='rejectpay'){if(!confirm('Kataa malipo haya? Oda itarudi kuwa "Haijalipwa".'))return;r=await sb.from('orders').update({payment_status:'unpaid'}).eq('id',id)}
+  else if(a==='cancel'){if(!confirm('Futa oda hii?'))return;r=await sb.from('orders').update({order_status:'cancelled'}).eq('id',id)}
+  else if(a==='delexp'){if(!confirm('Futa gharama hii?'))return;r=await sb.from('expenses').delete().eq('id',id)}
+  else if(a==='delpur'){if(!confirm('Futa manunuzi haya?'))return;r=await sb.from('purchases').delete().eq('id',id)}
+  else if(a==='avail')r=await sb.from('business_products').update({is_available:b.dataset.v!=='true'}).eq('id',id);
+  else if(a==='delprod'){if(!confirm(`Futa "${b.dataset.n}" kabisa? Oda za zamani zitabaki.`))return;r=await sb.from('business_products').delete().eq('id',id)}
+  else if(a==='price'){const c=b.dataset.c==='1';const v=prompt(c?'Kiasi cha chini (TZS):':'Bei mpya (TZS):',b.dataset.p);if(v===null||isNaN(Number(v)))return;
+    r=await sb.from('business_products').update(c?{min_amount:Number(v)}:{price:Number(v)}).eq('id',id)}
+  else if(a==='bizsave'){r=await sb.from('businesses').update({name:G('bn').value,phone:G('bp').value||null,location:G('bl').value||null,location_description:G('bd').value||null}).eq('id',bizId);
+    if(!r.error){bizName=G('bn').value;alert('Imehifadhiwa ✓')}}
+  else if(a==='pmsave'||a==='pmadd'){
+    const c=b.closest('.pm');const rec={method_name:c.querySelector('.m1').value.trim(),account_number:c.querySelector('.m3').value||null,account_name:c.querySelector('.m2').value||null,instructions:c.querySelector('.m4').value||null,is_active:c.querySelector('.m5').checked};
+    if(!rec.method_name)return alert('Weka jina la njia ya malipo.');
+    r=a==='pmadd'?await sb.from('business_payment_methods').insert({...rec,business_id:bizId}):await sb.from('business_payment_methods').update(rec).eq('id',c.dataset.id);
+    if(!r.error&&a==='pmsave')alert('Imehifadhiwa ✓')}
+  else if(a==='pmdel'){if(!confirm('Futa njia hii ya malipo?'))return;r=await sb.from('business_payment_methods').delete().eq('id',b.closest('.pm').dataset.id)}
+  if(r?.error)return alert(r.error.message);
+  ({adv:loadOrders,paid:loadOrders,paidcash:loadOrders,rejectpay:loadOrders,cancel:loadOrders,delexp:loadCosts,delpur:loadCosts,avail:loadProducts,price:loadProducts,delprod:loadProducts,bizsave:loadSettings,pmsave:loadSettings,pmadd:loadSettings,pmdel:loadSettings})[a]();
+});
+
+(location.hash==='#admin'||location.hash==='#dashboard')?admin():shop();
+window.addEventListener('hashchange',()=>location.reload());
+</script>
+</body>
+</html>
