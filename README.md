@@ -1,1 +1,1 @@
-# James-chips-point-
+# chips-point-
